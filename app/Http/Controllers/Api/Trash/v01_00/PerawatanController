@@ -1,0 +1,208 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+
+use Illuminate\Http\Request;
+use App\Models\Perawatan;
+use App\Http\Controllers\Controller;
+use CILog;
+use Illuminate\Database\Query\Expression;
+use Illuminate\Validation\Rule;
+
+class PerawatanController extends Controller
+{
+    protected $path_log = null;
+
+    public function __construct()
+    {
+        CILog::enableQueryLog();
+        $this->path_log = storage_path('logs/api/api_'.date('Ymd').'.log');
+        CILog::setLogToDb(CILog::TYPE_REQUEST_ACCEPTED);
+    }
+
+    public function __destruct()
+    {
+    }
+
+    public function index()
+    {
+        $log_code = 'XXXXX'; $http_code = 0; $gate = 0;
+        try {
+            $model = Perawatan::orderBy('perawatan_id','ASC')->get();
+            if(!$model) {
+                $log_code = 'R0001'; $http_code = 404; $gate = 1;
+                throw new \Exception('Data not found',$http_code);
+            }
+
+            $log_code = '00000'; $http_code = 200; $gate = 2;
+            return response()->json([
+                'code' => $log_code,
+                'type' => 'success',
+                'message' => 'Success',
+                'data' => $model
+            ], $http_code);
+
+        } catch(\Exception $e) {
+            return response()->json([
+                'code' => $log_code,
+                'type' => 'error',
+                'message' => $e->getMessage()
+            ], empty($http_code) ? 500 : $http_code);
+        }
+    }
+
+    public function show($id)
+    {
+        $log_code = 'XXXXX'; $http_code = 0; $gate = 0;
+        try {
+            $model = Perawatan::where((new Perawatan)->getKeyName(), $id)->first();
+            if(!$model) {
+                $log_code = 'R0001'; $http_code = 404; $gate = 1;
+                throw new \Exception('Data not found',$http_code);
+            }
+
+            $log_code = '00000'; $http_code = 200; $gate = 2;
+            return response()->json([
+                'code' => $log_code,
+                'type' => 'success',
+                'message' => 'Success',
+                'data' => $model
+            ], $http_code);
+        } catch(\Exception $e) {
+            return response()->json([
+                'code' => $log_code,
+                'type' => 'error',
+                'message' => $e->getMessage()
+            ], empty($http_code) ? 500 : $http_code);
+        }
+    }
+
+    public function store(Request $request)
+    {
+        $log_code = 'XXXXX'; $http_code = 0; $gate = 0;
+        try {
+            $validator = \Validator::make($request->post(), [
+                'isenabled' => ['required', 'boolean'],
+                'no_trans' => ['required', 'max:30', 'unique:t_perawatan,no_trans'],
+                //'tgl_trans' => ['required', 'date_format:Y-m-d H:i:s'],
+                //'keterangan' => ['max:1000'],
+                'cre_user' => ['required', 'max:50']
+            ]);
+            if($validator->fails()) {
+                $log_code = 'F0001'; $http_code = 400; $gate = 1;
+                return response()->json([
+                    'code' => $log_code,
+                    'type' => 'error',
+                    'message' => 'The given data was invalid.',
+                    'errors' => $validator->messages()->get('*')
+                ], $http_code);
+            }
+
+            $model = new Perawatan();
+            $model->generatePrimaryKey();
+            $model->isenabled = $request->post('isenabled');
+            $model->no_trans = $request->post('no_trans');
+            $model->tgl_trans = new Expression('CURRENT_TIMESTAMP');
+            $model->keterangan = $request->post('keterangan');
+            $model->cre_user = $request->post('cre_user');
+            if(!$model->save()) {
+                $log_code = 'F0002'; $http_code = 500; $gate = 2;
+                throw new \Exception('Failed to save data',$http_code);
+            }
+
+            $log_code = '00000'; $http_code = 200; $gate = 3;
+            return response()->json([
+                'code' => $log_code,
+                'type' => 'success',
+                'message' => 'Data saved successfully'
+            ], $http_code);
+        } catch (\Exception $e) {
+            return response()->json([
+                'code' => $log_code,
+                'type' => 'error',
+                'message' => $e->getMessage()
+            ], empty($http_code) ? 500 : $http_code);
+        }
+    }
+
+    public function update(Request $request, $id)
+    {
+        $log_code = 'XXXXX'; $http_code = 0; $gate = 0;
+        try {
+            $model = Perawatan::where((new Perawatan)->getKeyName(), $id)->first();
+            if(!$model) {
+                $log_code = 'R0001'; $http_code = 404; $gate = 1;
+                throw new \Exception('Data not found',$http_code);
+            }
+
+            $validator = \Validator::make($request->post(), [
+                'isenabled' => ['required', 'boolean'],
+                // https://laravel.com/docs/8.x/validation#rule-unique
+                'no_trans' => ['required', 'max:30', Rule::unique('t_perawatan')->ignore($model->perawatan_id,'perawatan_id')],
+                //'tgl_trans' => ['required', 'date_format:Y-m-d H:i:s'],
+                //'keterangan' => ['max:1000'],
+                'upd_user' => ['required', 'max:50']
+            ]);
+            if($validator->fails()) {
+                $log_code = 'F0001'; $http_code = 400; $gate = 2;
+                return response()->json([
+                    'code' => $log_code,
+                    'type' => 'error',
+                    'message' => 'The given data was invalid.',
+                    'errors' => $validator->messages()->get('*')
+                ], $http_code);
+            }
+
+            $model->fill($request->all());
+            if(!$model->save()) {
+                $log_code = 'F0003'; $http_code = 500; $gate = 3;
+                throw new \Exception('Failed to update data',$http_code);
+            }
+
+            $log_code = '00000'; $http_code = 200; $gate = 4;
+            return response()->json([
+                'code' => $log_code,
+                'type' => 'success',
+                'message' => 'Data changed successfully'
+            ], $http_code);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'code' => $log_code,
+                'type' => 'error',
+                'message' => $e->getMessage()
+            ], empty($http_code) ? 500 : $http_code);
+        }
+    }
+
+    public function destroy($id)
+    {
+        $log_code = 'XXXXX'; $http_code = 0; $gate = 0;
+        try {
+            $model = Perawatan::where((new Perawatan)->getKeyName(), $id)->first();
+            if(!$model) {
+                $log_code = 'R0001'; $http_code = 404; $gate = 1;
+                throw new \Exception('Data not found',$http_code);
+            }
+
+            if(!$model->delete()) {
+                $log_code = 'F0004'; $http_code = 500; $gate = 2;
+                throw new \Exception('Failed to delete data',$http_code);
+            }
+
+            $log_code = '00000'; $http_code = 200; $gate = 3;
+            return response()->json([
+                'code' => $log_code,
+                'type' => 'success',
+                'message' => 'Data deleted successfully'
+            ], $http_code);
+        } catch (\Exception $e) {
+            return response()->json([
+                'code' => $log_code,
+                'type' => 'error',
+                'message' => $e->getMessage()
+            ], empty($http_code) ? 500 : $http_code);
+        }
+    }
+}

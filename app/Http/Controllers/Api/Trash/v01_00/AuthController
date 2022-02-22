@@ -1,0 +1,116 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use Illuminate\Http\Request;
+// https://laravel.com/api/8.x/Illuminate/Support/Facades/Response.html
+use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\Hash;
+use App\Models\User;
+use App\Http\Controllers\Controller;
+use Laravel\Sanctum\PersonalAccessToken;
+
+// Kalau mau cari tau namespace yang digunakan oleh kelas Auth => config\app.php
+// Illuminate\Support\Facades\Auth
+// Bagaimana cara "Auth" dapat memanggil kelas "SessionGuard"?
+// Illuminate\Auth\SessionGuard
+// Untuk saat ini saya masih belum paham cara kerja kelas "Auth"
+use Auth;
+
+class AuthController extends Controller
+{
+    public function login(Request $request)
+    {
+        //return Response::make(['message' => 'Internal server error'],500,['Content-Type' => 'application/json']);
+        //return Response::json(['message' => 'Your changes have been successfully saved!'],200);
+
+        // Illuminate\Support\Facades\Auth
+        // die((new \ReflectionClass(get_class((new Auth))))->getName());
+
+        $credentials = $request->validate([
+            'email' => ['required', 'email'],
+            'password' => ['required']
+        ]);
+        // Jika validasi gagal, maka kode akan berhenti
+        // https://jsonformatter.org/
+        // {"message":"The given data was invalid.","errors":{"email":["The email must be a valid email address."]}}
+        // Jika validasi sukses, akan lanjut ke baris kode dibawah sini
+
+        $user = User::where(['email' => $request->email])->first();
+        if(!$user || !Hash::check($request->password, $user->password)) {
+            return response()->json([
+                'message' => 'Email or password incorrect'
+            ], 401);
+        }
+
+        // https://laravel.com/docs/8.x/authentication#authenticating-users
+        // if(Auth::attempt($credentials)) {}
+
+        // createToken('token_name')
+        // $token = $user->createToken('token',['server:update'])->plainTextToken;
+        // Bisa untuk validasi menyesuaikan token pada route tertentu
+        // if ($user->tokenCan('server:update')) {}
+
+        // Default :
+        // $token = $user->createToken('token',['*'])->plainTextToken;
+        $token = $user->createToken('token')->plainTextToken;
+        // print('<pre>'.print_r($token,true).'</pre>');exit;
+
+        // Harusnya ketika dapat token, simpan ke dalam database
+        // ...
+
+        // return Response::make($contents, 200, $headers);
+        return Response::json([
+            'message' => 'You are now logged in to the our system',
+            'user' => $user,
+            'token' => $token
+        ], 200);
+    }
+
+    // =================================================================
+    // Javascript - Fetch | Request
+    // =================================================================
+    //let myHeaders = new Headers();
+    //myHeaders.append("Accept", "application/json");
+    //myHeaders.append("Authorization", "Bearer 15|ZZ5ONAccewQCqNXwpEukWEccQRuK7SVnoYzfTPA5");
+    //let requestOptions = {
+    //    method: 'GET',
+    //    headers: myHeaders,
+    //    redirect: 'follow'
+    //};
+    //fetch("http://127.0.0.1:8000/api/tokens", requestOptions)
+    //.then(response => response.text())
+    //.then(result => console.log(result))
+    //.catch(error => console.log('error', error));
+    // =================================================================
+
+    public function tokens(Request $request)
+    {
+        // return response()->json($request->user()->tokens,200);
+
+        // https://laracasts.com/discuss/channels/laravel/how-to-get-current-access-token-in-sanctum?page=1&replyId=745449
+        // https://laravel.com/api/8.x/Illuminate/Support/Facades/Request.html#method_bearerToken
+        // return response()->json(\Illuminate\Support\Facades\Request::bearerToken(),200);
+
+        // https://stackoverflow.com/questions/67546967/get-user-by-sanctum-token
+        $token = PersonalAccessToken::findToken($request->bearerToken());
+        if(!$token) {
+            return response()->json(['message' => 'Token not found'],400);
+        }
+
+        return response()->json([
+            'message' => 'Token found',
+            'user' => $token->tokenable,
+            'token' => $request->bearerToken()
+        ],200);
+    }
+
+    // https://laravel.com/docs/8.x/sanctum#revoking-tokens
+    public function logout(Request $request)
+    {
+        auth()->user()->tokens()->delete();
+        return [
+            'message' => 'Logged out'
+        ];
+    }
+}

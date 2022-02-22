@@ -1,0 +1,58 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
+use App\Models\Lokasi;
+
+class LocationController extends Controller
+{
+    public function __construct()
+    {
+        session()->put('cilog.session_id', date('YmdHis').rand(1000,9999));
+    }
+
+    public function index()
+    {
+        $model = Lokasi::with('ruangan')->orderBy('lokasi_id','ASC')->get();
+        if($model->isEmpty()) {
+            $result = [
+                'code' => 'R0001',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Data not found'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 404);
+        }
+
+        $result = [
+            'code' => '00000',
+            'noref' => session()->get('cilog.session_id'),
+            'type' => 'success',
+            'message' => 'Success',
+            'data' => $model
+        ];
+        cilog()->toDb(json_encode($result));
+        return response()->json($result, 200);
+    }
+
+    public function store(Request $request)
+    {
+    }
+
+    public function show($id)
+    {
+    }
+
+    public function update(Request $request, $id)
+    {
+    }
+
+    public function destroy($id)
+    {
+    }
+}
+
+?>

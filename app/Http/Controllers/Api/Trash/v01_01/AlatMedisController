@@ -1,0 +1,42 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
+use App\Models\Produk;
+use App\Models\ProdukAtribut;
+
+class AlatMedisController extends Controller
+{
+    public function getLembarKerjaPemeliharaan($alat_medis_id)
+    {
+        $product = Produk::where(['produk_id' => $alat_medis_id])->first(['produk_id','kodeproduk','kodebmn','namaproduk','merk','tipe','no_sn','hargajual','hargabeli']);
+        if(!$product) {
+            return response()->json([
+                'message' => 'Produk tidak ditemukan'
+            ], 500);
+        }
+
+        $attrs = ProdukAtribut::where(['produk_id' => $product->produk_id])->get();
+        //print('<pre>'.print_r($product->produk_id,true).'</pre>'); exit;
+        $dataAttrs = [];
+        foreach($attrs as $attr) {
+            $dataAttrs[$attr->kategori][] = [
+                'id' => $attr->produk_atribut_id,
+                'value' => $attr->nama_atribut
+            ];
+        }
+
+        $result = [
+            'noref' => date('YmdHis').rand(1000,9999),
+            'data' => array_merge($product->toArray(),[
+                'attributes' => $dataAttrs
+            ])
+        ];
+
+        return response()->json($result,200);
+    }
+}
+
+?>

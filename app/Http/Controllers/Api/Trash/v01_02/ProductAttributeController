@@ -1,0 +1,299 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
+use Illuminate\Database\Query\Expression;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
+
+use App\Models\Produk;
+use App\Models\ProdukAtribut;
+
+class ProductAttributeController extends Controller
+{
+    public function __construct()
+    {
+        session()->put('cilog.session_id', date('YmdHis').rand(1000,9999));
+    }
+
+    public function store(Request $request)
+    {
+        $validator = \Validator::make($request->post(), [
+            'id_produk' => ['required', 'exists:m_produk,produk_id'],
+            'label' => ['required'],
+            'kategori' => ['required', Rule::in([ProdukAtribut::KATEGORI_PARAMETER, ProdukAtribut::KATEGORI_BAGIAN_ALAT])],
+            //'satuan' => ['required']
+        ], [
+            'kategori.in' => 'Nilai :attribute tidak valid! Pilih salah satu: ['.ProdukAtribut::KATEGORI_PARAMETER.', '.ProdukAtribut::KATEGORI_BAGIAN_ALAT.']'
+        ]);
+        if($validator->fails()) {
+            $result = [
+                'code' => 'F0001',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'The given data was invalid.',
+                'errors' => $validator->messages()->get('*')
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 400);
+        }
+
+        $model = new ProdukAtribut();
+        $model->nama_atribut = $request->post('label');
+        $model->produk_id = $request->post('id_produk');
+        $model->kategori = $request->post('kategori');
+        $model->setAnswer($model->kategori);
+        $model->cre_user = 'Admin';
+        if(!$model->save()) {
+            $result = [
+                'code' => 'F0002',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Failed to save data'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 500);
+        }
+
+        $result = [
+            'code' => '00000',
+            'noref' => session()->get('cilog.session_id'),
+            'type' => 'success',
+            'message' => 'Data saved successfully'
+        ];
+        cilog()->toDb(json_encode($result));
+        return response()->json($result, 200);
+    }
+
+    public function destroy($id)
+    {
+        $model = ProdukAtribut::where((new ProdukAtribut)->getKeyName(), $id)->first();
+        if(!$model) {
+            $result = [
+                'code' => 'R0001',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Data not found'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 404);
+        }
+
+        if(!$model->delete()) {
+            $result = [
+                'code' => 'F0004',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Failed to delete data'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 500);
+        }
+
+        $result = [
+            'code' => '00000',
+            'noref' => session()->get('cilog.session_id'),
+            'type' => 'success',
+            'message' => 'Data deleted successfully'
+        ];
+        cilog()->toDb(json_encode($result));
+        return response()->json($result, 200);
+    }
+
+    public function format($kategori=null)
+    {
+        if(!in_array($kategori, [ProdukAtribut::KATEGORI_PARAMETER, ProdukAtribut::KATEGORI_BAGIAN_ALAT])) {
+            $result = [
+                'code' => 'F0001',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Nilai kategori tidak valid! Pilih salah satu kategori: ['.ProdukAtribut::KATEGORI_PARAMETER.', '.ProdukAtribut::KATEGORI_BAGIAN_ALAT.']'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 400);
+        }
+
+        $format = (new ProdukAtribut)->getFormatAnswer();
+        $result = [
+            'code' => '00000',
+            'noref' => session()->get('cilog.session_id'),
+            'type' => 'success',
+            'message' => 'Success',
+            'data' => $format[$kategori]
+        ];
+        cilog()->toDb(json_encode($result));
+        return response()->json($result, 200);
+    }
+
+    public function updateLabel(Request $request, $id)
+    {
+        $validator = \Validator::make($request->post(), [
+            'label' => ['required']
+        ]);
+        if($validator->fails()) {
+            $result = [
+                'code' => 'F0001',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'The given data was invalid.',
+                'errors' => $validator->messages()->get('*')
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 400);
+        }
+
+        $model = ProdukAtribut::where((new ProdukAtribut)->getKeyName(), $id)->first();
+        if(!$model) {
+            $result = [
+                'code' => 'R0001',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Data not found'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 404);
+        }
+
+        // $model->fill($request->all());
+        $model->nama_atribut = $request->post('label');
+        $model->upd_user = 'Admin';
+        if(!$model->save()) {
+            $result = [
+                'code' => 'F0003',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Failed to update data'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 500);
+        }
+
+        $result = [
+            'code' => '00000',
+            'noref' => session()->get('cilog.session_id'),
+            'type' => 'success',
+            'message' => 'Data changed successfully'
+        ];
+        cilog()->toDb(json_encode($result));
+        return response()->json($result, 200);
+    }
+
+    public function updateAnswer(Request $request, $id)
+    {
+        $validator = \Validator::make($request->post(), [
+            'answer' => ['required', new \App\Rules\ProdukAtribut\CheckAnswerFormatByRowRule($request)]
+        ]);
+        if($validator->fails()) {
+            $result = [
+                'code' => 'F0001',
+                'type' => 'error',
+                'message' => 'The given data was invalid.',
+                'errors' => $validator->messages()->get('*')
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 400);
+        }
+
+        $model = ProdukAtribut::where((new ProdukAtribut)->getKeyName(), $id)->first();
+        if(!$model) {
+            $result = [
+                'code' => 'R0001',
+                'type' => 'error',
+                'message' => 'Data not found'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 404);
+        }
+
+        // $model->fill($request->all());
+        $model->answer = json_encode($request->post('answer'));
+        $model->upd_user = 'Admin';
+        if(!$model->save()) {
+            $result = [
+                'code' => 'F0003',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Failed to update data'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 500);
+        }
+
+        $result = [
+            'code' => '00000',
+            'noref' => session()->get('cilog.session_id'),
+            'type' => 'success',
+            'message' => 'Data changed successfully'
+        ];
+        cilog()->toDb(json_encode($result));
+        return response()->json($result, 200);
+    }
+
+    public function updateAnswerByColumn(Request $request, $id, $column)
+    {
+        $validator = \Validator::make($request->post(), [
+            'answer' => ['required', new \App\Rules\ProdukAtribut\CheckAnswerFormatByColumnRule($request)]
+        ]);
+        if($validator->fails()) {
+            $result = [
+                'code' => 'F0001',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'The given data was invalid.',
+                'errors' => $validator->messages()->get('*')
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 400);
+        }
+
+        $model = ProdukAtribut::where((new ProdukAtribut)->getKeyName(), $id)->first();
+        if(!$model) {
+            $result = [
+                'code' => 'R0001',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Data not found'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 404);
+        }
+
+        $format = json_decode($model->answer, true);
+        if(json_last_error()!==JSON_ERROR_NONE) {
+            $result = [
+                'code' => 'R0003',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Json format invalid'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 500);
+        }
+
+        //print('<pre>'.print_r($request->post('answer'),true).'</pre>');exit;
+        $format[$column] = $request->post('answer');
+        $model->answer = json_encode($format);
+        $model->upd_user = 'Admin';
+        if(!$model->save()) {
+            $result = [
+                'code' => 'F0003',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Failed to update data'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 500);
+        }
+
+        $result = [
+            'code' => '00000',
+            'noref' => session()->get('cilog.session_id'),
+            'type' => 'success',
+            'message' => 'Data changed successfully'
+        ];
+        cilog()->toDb(json_encode($result));
+        return response()->json($result, 200);
+    }
+}

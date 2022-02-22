@@ -1,0 +1,78 @@
+<?php
+
+namespace App\Exceptions;
+
+use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use Throwable;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+// use App\Components\Log\CILog;
+use CILog;
+
+class Handler extends ExceptionHandler
+{
+    /**
+     * A list of the exception types that are not reported.
+     *
+     * @var array<int, class-string<Throwable>>
+     */
+    protected $dontReport = [
+        //
+    ];
+
+    /**
+     * A list of the inputs that are never flashed for validation exceptions.
+     *
+     * @var array<int, string>
+     */
+    protected $dontFlash = [
+        'current_password',
+        'password',
+        'password_confirmation',
+    ];
+
+    /**
+     * Register the exception handling callbacks for the application.
+     *
+     * @return void
+     */
+    public function register()
+    {
+        $uniqueId = cilog()->getUniqueId();
+        $this->reportable(function (Throwable $e) {
+            // print('<pre>'.print_r($e->getMessage(),true).'</pre>');exit;
+            // die((new \ReflectionClass(get_class($this)))->getName());
+            // bisa insert table untuk menyimpan log error disini
+            // https://www.php.net/manual/en/class.throwable.php
+            // https://laravel.com/docs/8.x/errors
+            // CILog::setLogToDb(CILog::TYPE_ERROR, $e->getMessage());
+        });
+
+        $this->renderable(function(\Illuminate\Auth\AuthenticationException $e, $request) use ($uniqueId) {
+            if ($request->is('api/*')) {
+                $message = [
+                    'code' => 'R0002',
+                    'message' => 'Unauthorized! Sorry, your request could not be processed.',
+                    'noref' => $uniqueId
+                ];
+                CILog::setLogToDb(CILog::TYPE_ERROR, json_encode($message));
+                return response()->json($message, 401);
+            }
+        });
+
+        // config\app.php
+        // die(var_dump(config('app.debug')));
+        if(!config('app.debug')) {
+            $this->renderable(function (Throwable $e, $request) use ($uniqueId) {
+                if ($request->is('api/*')) {
+                    $message = [
+                        'code' => 'R0003',
+                        'message' => 'Sorry, there was an error! We hope to solve the problem as soon as possible.',
+                        'noref' => $uniqueId
+                    ];
+                    CILog::setLogToDb(CILog::TYPE_ERROR, json_encode($message));
+                    return response()->json($message, 500);
+                }
+            });
+        }
+    }
+}

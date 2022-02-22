@@ -1,0 +1,285 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use Illuminate\Http\Request;
+use App\Models\Lokasi;
+use App\Http\Controllers\Controller;
+
+class LocationController extends Controller
+{
+    protected $path_log = null;
+
+    public function __construct()
+    {
+        \CILog::enableQueryLog();
+        $this->path_log = storage_path('logs/api/api_'.date('Ymd').'.log');
+        \CILog::setLogToDb(\CILog::TYPE_REQUEST_ACCEPTED);
+    }
+
+    public function __destruct()
+    {
+    }
+
+    public function index()
+    {
+        $log_code = '00000';
+        $http_code = 200;
+        try {
+            $data = Lokasi::with('ruangan')->get();
+            // print('<pre>'.print_r(DB::getDefaultConnection(),true).'</pre>');exit;
+            \CILog::setLogQueryToFile((new Lokasi)->getConnectionName(), $this->path_log);
+
+            if(!$data) {
+                $log_code = 'R0001';
+                $http_code = 404;
+                throw new \Exception($http_code,'Data not found');
+            }
+            $args = [
+                'code' => $log_code,
+                'type' => 'success',
+                'message' => 'Success',
+                'data' => $data
+            ];
+            \CILog::setLogToFile(json_encode($args), 7, $this->path_log);
+            return response()->json($args, $http_code);
+        } catch(\Exception $e) {
+            $args = [
+                'code' => $log_code,
+                'type' => 'error',
+                'message' => config('app.debug') ? $e->getMessage() : 'Data not found'
+            ];
+            \CILog::setLogToFile(json_encode($args), 4, $this->path_log);
+            return response()->json($args, $http_code);
+        }
+    }
+
+    public function show($id)
+    {
+        $log_code = '00000';
+        $http_code = 200;
+        try {
+            $log_code = 'R0001';
+            $http_code = 404;
+            $data = Lokasi::findOrFail($id);
+            // print('<pre>'.print_r(\DB::getQueryLog(),true).'</pre>');exit;
+            \CILog::setLogQueryToFile((new Lokasi)->getConnectionName(), $this->path_log);
+
+            $log_code = '00000';
+            $http_code = 200;
+            $args = [
+                'code' => $log_code,
+                'type' => 'success',
+                'message' => 'Success',
+                'data' => $data
+            ];
+            \CILog::setLogToFile(json_encode($args), 7, $this->path_log);
+            return response()->json($args, $http_code);
+        } catch(\Exception $e) {
+            $args = [
+                'code' => 'R0001',
+                'type' => 'error',
+                'message' => config('app.debug') ? $e->getMessage() : 'Data not found'
+            ];
+            \CILog::setLogToFile(json_encode($args), 4, $this->path_log);
+            return response()->json($args, 404);
+        }
+    }
+
+    public function store(Request $request)
+    {
+        $log_code = 'F0001';
+        $http_code = 400;
+        /* $validate = $request->validate([
+            'IdRuangan' => ['required'],
+            'StatusActive' => ['required'],
+            'NamaLokasi' => ['required'],
+            'DibuatOleh' => ['required']
+        ], [
+            'IdRuangan.required' => ':attribute tidak boleh kosong! Anda dapat memperoleh nilai ini dari "GET:/api/ruangan"'
+        ]); */
+        try {
+
+            $validator = \Validator::make($request->post(), [
+                'IdRuangan' => ['required', 'exists:m_ruangan,ruangan_id'],
+                'StatusActive' => ['required', 'boolean'],
+                'NamaLokasi' => ['required', 'max:100'],
+                'DibuatOleh' => ['required', 'max:50']
+            ], [
+                'IdRuangan.required' => ':attribute tidak boleh kosong! Anda dapat memperoleh nilai ini dari "GET:/api/ruangan"',
+                'IdRuangan.exists' => ':attribute tidak valid! Anda dapat memperoleh nilai ini dari "GET:/api/ruangan"'
+            ]);
+            if($validator->fails()) {
+                // print('<pre>'.print_r($validator->messages()->get('*'),true).'</pre>');exit;
+                $args = [
+                    'code' => $log_code,
+                    'type' => 'error',
+                    'message' => 'The given data was invalid.',
+                    'errors' => $validator->messages()->get('*')
+                ];
+                \CILog::setLogToFile(json_encode($args), 4, $this->path_log);
+                return response()->json($args, $http_code);
+            }
+
+            $log_code = '00000';
+            $http_code = 200;
+
+            $model = new Lokasi();
+            $model->ruangan_id = $request->post('IdRuangan');
+            $model->isenabled = $request->post('StatusActive');
+            $model->nama_lokasi = $request->post('NamaLokasi');
+            $model->cre_user = $request->post('DibuatOleh');
+            $result = $model->save();
+            \CILog::setLogQueryToFile((new Lokasi)->getConnectionName(), $this->path_log);
+            if(!$result) {
+                $log_code = 'F0002';
+                $http_code = 500;
+                throw new \Exception($http_code,'Failed to save data');
+            }
+
+            $args = [
+                'code' => '00000',
+                'type' => 'success',
+                'message' => 'Data saved successfully',
+                'data' => Lokasi::findOrFail($model->lokasi_id)
+            ];
+            \CILog::setLogToFile(json_encode($args), 7, $this->path_log);
+            return response()->json($args, 200);
+
+        } catch (\Exception $e) {
+            // print('<pre>'.print_r($validate,true).'</pre>');exit;
+            $args = [
+                'code' => $log_code,
+                'type' => 'error',
+                'message' => config('app.debug') ? $e->getMessage() : 'Failed to save data'
+            ];
+            \CILog::setLogToFile(json_encode($args), 4, $this->path_log);
+            return response()->json($args, $http_code);
+        }
+    }
+
+    public function update(Request $request, $id)
+    {
+        $log_code = '00000';
+        $http_code = 200;
+        try {
+            $validator = \Validator::make($request->post(), [
+                'IdRuangan' => ['exists:m_ruangan,ruangan_id'],
+                'StatusActive' => ['boolean'],
+                'NamaLokasi' => ['max:100'],
+                'DiubahOleh' => ['max:50']
+            ], [
+                'IdRuangan.exists' => ':attribute tidak valid! Anda dapat memperoleh nilai ini dari "GET:/api/ruangan"'
+            ]);
+            if($validator->fails()) {
+                $log_code = 'F0001';
+                $http_code = 400;
+                $args = [
+                    'code' => $log_code,
+                    'type' => 'error',
+                    'message' => 'The given data was invalid.',
+                    'errors' => $validator->messages()->get('*')
+                ];
+                \CILog::setLogToFile(json_encode($args), 4, $this->path_log);
+                return response()->json($args, $http_code);
+            }
+
+            $log_code = 'R0001';
+            $http_code = 404;
+            $data = Lokasi::findOrFail($id);
+            // $result = $data->update($request->all());
+            /* $result = $data->update([
+                'ruangan_id' => $request->post('IdRuangan'),
+                'isenabled' => $request->post('StatusActive'),
+                'nama_lokasi' => $request->post('NamaLokasi'),
+                'upd_user' => $request->post('DiubahOleh')
+            ]); */
+            /* $data->ruangan_id   = $request->post('IdRuangan');
+            $data->isenabled    = $request->post('StatusActive');
+            $data->nama_lokasi  = $request->post('NamaLokasi');
+            $data->upd_user     = $request->post('DiubahOleh'); */
+
+            $bodyParams = [
+                'ruangan_id' => $request->post('IdRuangan'),
+                'isenabled' => $request->post('StatusActive'),
+                'nama_lokasi' => $request->post('NamaLokasi'),
+                'upd_user' => $request->post('DiubahOleh')
+            ];
+            // $request->all()
+            foreach($bodyParams as $key => $value) {
+                if(empty($value)) {
+                    unset($bodyParams[$key]);
+                }
+            }
+            $data->fill($bodyParams);
+            $result = $data->save();
+            \CILog::setLogQueryToFile((new Lokasi)->getConnectionName(), $this->path_log);
+            if(!$result) {
+                $log_code = 'F0003';
+                $http_code = 500;
+                throw new \Exception($http_code,'Failed to update data');
+            }
+
+            $log_code = '00000';
+            $http_code = 200;
+
+            $args = [
+                'code' => $log_code,
+                'type' => 'success',
+                'message' => 'Data changed successfully',
+                'data' => Lokasi::findOrFail($data->lokasi_id)
+            ];
+            \CILog::setLogToFile(json_encode($args), 7, $this->path_log);
+            return response()->json($args, $http_code);
+
+        } catch (\Exception $e) {
+            $args = [
+                'code' => $log_code,
+                'type' => 'error',
+                'message' => config('app.debug') ? $e->getMessage() : 'Failed to update data'
+            ];
+            \CILog::setLogToFile(json_encode($args), 4, $this->path_log);
+            return response()->json($args, $http_code);
+        }
+    }
+
+    public function destroy($id)
+    {
+        $log_code = 'R0001';
+        $http_code = 404;
+        $line = 0;
+        try {
+            $line = 1;
+            $data = Lokasi::findOrFail($id);
+            if(!$data->delete()) {
+                $log_code = 'F0004';
+                $http_code = 500;
+                throw new \Exception($http_code,'Failed to delete data');
+            }
+
+            \CILog::setLogQueryToFile((new Lokasi)->getConnectionName(), $this->path_log);
+            $log_code = '00000';
+            $http_code = 200;
+            $args = [
+                'code' => $log_code,
+                'type' => 'success',
+                'message' => 'Data deleted successfully'
+            ];
+            \CILog::setLogToFile(json_encode($args), 7, $this->path_log);
+            return response()->json($args, $http_code);
+
+        } catch (\Exception $e) {
+            if($line==1) {
+                \CILog::setLogQueryToFile((new Lokasi)->getConnectionName(), $this->path_log);
+            }
+
+            $args = [
+                'code' => $log_code,
+                'type' => 'error',
+                'message' => config('app.debug') ? $e->getMessage() : 'Failed to delete data'
+            ];
+            \CILog::setLogToFile(json_encode($args), 4, $this->path_log);
+            return response()->json($args, $http_code);
+        }
+    }
+}

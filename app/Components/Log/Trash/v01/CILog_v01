@@ -1,0 +1,170 @@
+<?php
+
+namespace App\Components\Log;
+
+use App\Models\Log;
+
+/**
+ * Log Code
+ * 00000    => Success
+ * R0001    => Data not found
+ * R0002    => Not Authenticated
+ * R0003    => Other Errors
+ *
+ * F0001    => Failed to validating form
+ * F0002    => Failed to save data
+ * F0003    => Failed to update data
+ * F0004    => Failed to delete data
+ */
+
+class CILog extends Log
+{
+    public $path_api = 'logs/api';
+    public $path_api_error = 'logs/api/errors';
+
+    /* public function isConnected()
+    {
+        try {
+            \DB::connection()->getPDO();
+            echo \DB::connection()->getDatabaseName();
+        } catch(\Exception $e) {
+            echo $e->getMessage();
+        }
+        exit;
+    } */
+
+    public function getUniqueId()
+    {
+        return md5('log'.date('YmdHis').rand(1000,9999));
+    }
+
+    public static function enableQueryLog()
+    {
+        \DB::enableQueryLog();
+    }
+
+    public static function setLogToDb($type, $note=null):void
+    {
+        try {
+            $server = request()->server();
+            $port = null;
+            if(isset($server['SERVER_PORT'])) {
+                $port = $server['SERVER_PORT'];
+            }
+
+            $model = new Log();
+            $model->domain = request()->getHttpHost();
+            //$model->ipv4 = request()->server('REMOTE_ADDR');
+            $model->port = $port;
+            $model->url = request()->fullUrl();
+            $model->http_method = request()->method();
+            $model->header = json_encode(request()->header());
+            $model->user_agent = request()->userAgent();
+            $model->body = json_encode(array_merge(request()->input(),request()->post()));
+            $model->type = $type;
+            $model->note = $note;
+            $model->user_ip = \Request::ip(); // request()->ip();
+            if(!$model->save()) {
+                throw new \Exception(500,'Failed to save data into database');
+            }
+
+            // return Log::findOrFail($model->id);
+
+        } catch(\Exception $e) {
+            // sudah ada di logs\laravel.log
+            // throw $e;
+            // self::setLogToFile(json_encode(self::getErrorException($e)), 4);
+            // self::setLogToFile($e->getMessage(), 4);
+            self::setErrorLogToFile($e);
+        }
+    }
+
+    public static function setErrorLogToFile(\Exception $e, $path=null):void
+    {
+        if($path==null) {
+            /* $_ = ['logs','api','errors','api_'.date('Ymd').'.log'];
+            $path = '';
+            for($i=0;$i<sizeof($_);$i++) {
+                $path.=DIRECTORY_SEPARATOR.$_[$i];
+            }
+            $path = storage_path().$path; */
+            $path = storage_path((new CILog)->path_api_error.'/api_'.date('Ymd').'.log');
+        }
+
+        $log = [
+            'id' => (new CILog)->getUniqueId(),
+            // https://laravel.com/docs/8.x/helpers#paths-method-list
+            'path' => $path
+        ];
+        self::setLogToFile(json_encode($log), 4);
+        $str = $log['id'].PHP_EOL;
+        $str.= $e->getMessage().PHP_EOL;
+        $str.= $e->getCode().PHP_EOL;
+        $str.= $e->getFile().PHP_EOL;
+        $str.= $e->getLine().PHP_EOL;
+        $str.= $e->getTraceAsString().PHP_EOL;
+        self::setLogToFile($str, 4, $log['path']);
+    }
+
+    /**
+     * 1 = Emergency
+     * 2 = Alert
+     * 3 = Critical
+     * 4 = Error
+     * 5 = Warning
+     * 6 = Notice
+     * 7 = Info
+     * 8 = Debug
+     */
+    public static function setLogToFile($message, $type=7, $path=null)
+    {
+        if($path==null) {
+            $path = storage_path((new CILog)->path_api.'/api_'.date('Ymd').'.log');
+        }
+
+        $log = \Log::build([
+            'driver' => 'single',
+            'path' => $path
+        ]);
+
+        $message = $message.PHP_EOL;
+        switch ($type) {
+            case 1: $log->emergency($message); break;
+            case 2: $log->alert($message); break;
+            case 3: $log->critical($message); break;
+            case 4: $log->error($message); break;
+            case 5: $log->warning($message); break;
+            case 6: $log->notice($message); break;
+            case 7: $log->info($message); break;
+            case 8: $log->debug($message); break;
+        }
+    }
+
+    public static function setLogQueryToFile($connectionName, $path=null)
+    {
+        if($path==null) {
+            $path = storage_path('logs/databases/'.$connectionName.'/'.\DB::connection()->getDatabaseName().'/queries_'.date('Ymd').'.log');
+        }
+
+        $queries = '';
+        $query_logs = \DB::getQueryLog();
+        $total_log = sizeof($query_logs);
+        foreach($query_logs as $key => $row) {
+            $query = $row['query'];
+            for($i=0; $i<sizeof($row['bindings']); $i++) {
+                $data = $row['bindings'][$i];
+                if(($cursor=strpos($query,'?'))!==FALSE) {
+                    $start = substr($query,0,$cursor);
+                    $end = substr($query,$cursor+1);
+                    $finish = $start.(is_numeric($data) ? $data : (empty($data) ? "null" : "'$data'")).$end;
+                    $query = $finish;
+                }
+            }
+            $queries .= $query.' | '.$row['time'].($total_log==($key+1) ? '' : PHP_EOL);
+        }
+
+        self::setLogToFile($queries, 7, $path);
+    }
+}
+
+?>

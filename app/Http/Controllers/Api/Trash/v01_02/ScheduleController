@@ -1,0 +1,329 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
+use Illuminate\Database\Query\Expression;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
+
+use App\Models\Perawatan;
+use App\Models\PerawatanItem;
+use App\Models\User;
+use App\Models\ProdukAtribut;
+
+class ScheduleController extends Controller
+{
+    public function __construct()
+    {
+        session()->put('cilog.session_id', date('YmdHis').rand(1000,9999));
+    }
+
+    public function index()
+    {
+        $model = Perawatan::with([
+            'careItems' => function($query) {
+                $query->with([
+                    'produk' => function($query) {
+                        $query->select(['produk_id', 'namaproduk']);
+                    },
+                    'teknisi' => function($query) {
+                        $query->select(['id', 'name', 'email']);
+                    }
+                ]);
+            }
+        ])->orderBy('cre_date', 'desc')->get();
+        if($model->isEmpty()) {
+            $result = [
+                'code' => 'R0001',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Data not found'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 404);
+        }
+
+        // Laravel aneh gak bisa akses object hasMany relation, harus di convert dulu menggunakan toArray() collection
+        //print('<pre>'.print_r($model,true).'</pre>');exit;
+        //return response()->json($model[0]->care_items,200);
+        //return response()->json($model->toArray(),200);
+
+        $data = [];
+        foreach($model->toArray() as $row) {
+            $data['perawatan_id'] = $row['perawatan_id'];
+            $data['no_trans'] = $row['no_trans'];
+            $data['tgl_trans'] = date('Y-m-d',strtotime($row['tgl_trans']));
+            $data['keterangan'] = $row['keterangan'];
+            $data['status'] = $row['status'];
+            // $data['item_perawatan'] = $row['care_items'][0];
+            $data['item_perawatan']['perawatan_item_id'] = $row['care_items'][0]['perawatan_item_id'];
+            $data['item_perawatan']['produk'] = $row['care_items'][0]['produk'];
+            $data['item_perawatan']['teknisi'] = $row['care_items'][0]['teknisi'];
+        }
+
+        $result = [
+            'code' => '00000',
+            'noref' => session()->get('cilog.session_id'),
+            'type' => 'success',
+            'message' => 'Success',
+            'data' => $data
+        ];
+        cilog()->toDb(json_encode($result));
+        return response()->json($result, 200);
+    }
+
+    // https://laravel.com/docs/8.x/database#database-transactions
+    public function store(Request $request)
+    {
+        DB::beginTransaction();
+        $log_code = 'xxxxx'; $http_code = 0; $gate = 0;
+        try {
+            $validator = \Validator::make($request->post(), [
+                'no_trans' => ['required', 'max:30', 'unique:t_perawatan,no_trans'],
+                'tgl_trans' => ['required', 'date_format:Y-m-d'],
+                'produk_id' => ['required', 'numeric', 'exists:m_produk,produk_id'],
+                'lokasi_id' => ['required', 'numeric', 'exists:m_lokasi,lokasi_id'],
+                'ruangan_id' => ['required', 'numeric', 'exists:m_ruangan,ruangan_id'],
+                'teknisi_id' => ['required', 'numeric', 'exists:users,id'],
+            ], [
+                'produk_id.required' => ':attribute tidak boleh kosong! Anda dapat memperoleh nilai ini dari "GET:/api/product"',
+                'produk_id.exists' => ':attribute tidak valid! Anda dapat memperoleh nilai ini dari "GET:/api/product"',
+
+                'lokasi_id.required' => ':attribute tidak boleh kosong! Anda dapat memperoleh nilai ini dari "GET:/api/location"',
+                'lokasi_id.exists' => ':attribute tidak valid! Anda dapat memperoleh nilai ini dari "GET:/api/location"',
+
+                'ruangan_id.required' => ':attribute tidak boleh kosong! Anda dapat memperoleh nilai ini dari "GET:/api/room"',
+                'ruangan_id.exists' => ':attribute tidak valid! Anda dapat memperoleh nilai ini dari "GET:/api/room"',
+
+                'teknisi_id.required' => ':attribute tidak boleh kosong! Anda dapat memperoleh nilai ini dari "GET:/api/technician/search"',
+                'teknisi_id.exists' => ':attribute tidak valid! Anda dapat memperoleh nilai ini dari "GET:/api/technician/search"',
+            ]);
+            if($validator->fails()) {
+                $log_code = 'F0001'; $http_code = 400; $gate = 1;
+                DB::rollBack();
+                $result = [
+                    'code' => $log_code,
+                    'noref' => session()->get('cilog.session_id'),
+                    'type' => 'error',
+                    'message' => 'The given data was invalid.',
+                    'errors' => $validator->messages()->get('*')
+                ];
+                cilog()->toDb(json_encode($result));
+                return response()->json($result, $http_code);
+            }
+
+            // ==========================================================
+            // Blok ini berguna untuk mencegah jadwal bentrok pada penjadwalan alat yang sama di teknisi yang berbeda
+            // ==========================================================
+            // teknisi has not related
+            $model = PerawatanItem::with(['perawatan', 'produk', 'teknisi'])->where([
+                ['isenabled', '=', true]
+            ])->first();
+            // return response()->json($model,200);
+            if($model) {
+                /* $teknisi = User::where('id', $model->teknisi_id)->first();
+                $teknisi_name = 'Admin';
+                if($teknisi) {
+                    $teknisi_name = $teknisi->name;
+                } */
+                $teknisi_name = $model->teknisi->name;
+
+                $log_code = 'R0003'; $http_code = 400; $gate = 2;
+                $message = 'Alat "'.$model->produk->namaproduk.'" sudah terjadwal! Dan akan ditangani oleh teknisi "'.$teknisi_name.'" pada '.date('l, d F Y', strtotime($model->perawatan->tgl_trans));
+                throw new \Exception($message);
+            }
+            // ==========================================================
+
+            $created_by = 'Admin';
+
+            $model = new Perawatan();
+            $model->generatePrimaryKey();
+            $model->isenabled = true;
+            $model->no_trans = $request->post('no_trans');
+            $model->tgl_trans = $request->post('tgl_trans');
+            $model->keterangan = null;
+            $model->cre_user = $created_by;
+            $model->status = Perawatan::STATUS_PENDING;
+            if(!$model->save()) {
+                $log_code = 'F0002'; $http_code = 500; $gate = 3;
+                throw new \Exception('Failed to save data',$http_code);
+            }
+            $id_perawatan = $model->perawatan_id;
+
+            $model = new PerawatanItem();
+            $model->generatePrimaryKey();
+            $model->isenabled = true;
+            $model->perawatan_id = $id_perawatan;
+            $model->produk_id = $request->post('produk_id');
+            $model->ruangan_id = $request->post('ruangan_id');
+            $model->lokasi_id = $request->post('lokasi_id');
+            $model->teknisi_id = $request->post('teknisi_id');
+            $model->cre_user = $created_by;
+            if(!$model->save()) {
+                $log_code = 'F0002'; $http_code = 500; $gate = 4;
+                throw new \Exception('Failed to save data',$http_code);
+            }
+
+            $log_code = '00000'; $http_code = 200; $gate = 5;
+            DB::commit();
+            $result = [
+                'code' => $log_code,
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'success',
+                'message' => 'Data saved successfully'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, $http_code);
+
+        } catch(\Exception $e) {
+            DB::rollBack();
+            $result = [
+                'code' => $log_code,
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => $e->getMessage()." [Gate:{$gate}]"
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, $http_code);
+        }
+    }
+
+    public function show($id)
+    {
+        $model = Perawatan::with([
+            'careItems' => function($query) {
+                $query->with([
+                    'produk' => function($query) {
+                        $query->select(['produk_id', 'namaproduk', 'merk', 'tipe', 'no_sn']);
+                        //->with(['productAttributes']);
+                    },
+                    'teknisi' => function($query) {
+                        $query->select(['id', 'name', 'email']);
+                    },
+                    'lokasi' => function($query) {
+                        $query->select(['lokasi_id', 'nama_lokasi']);
+                    }
+                ]);
+            }
+        ])->where('perawatan_id', $id)->orderBy('cre_date', 'desc')->first();
+        //return response()->json($model,200);
+        if(empty($model)) {
+            $result = [
+                'code' => 'R0001',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Data not found'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 404);
+        }
+
+        $row = $model->toArray();
+        $data = [];
+        $data['perawatan_id'] = $row['perawatan_id'];
+        $data['no_trans'] = $row['no_trans'];
+        $data['tgl_trans'] = date('Y-m-d',strtotime($row['tgl_trans']));
+        $data['keterangan'] = $row['keterangan'];
+        $data['status'] = $row['status'];
+        // $data['item_perawatan'] = $row['care_items'][0];
+        $data['item_perawatan']['perawatan_item_id'] = $row['care_items'][0]['perawatan_item_id'];
+        $data['item_perawatan']['produk'] = $row['care_items'][0]['produk'];
+        $data['item_perawatan']['teknisi'] = $row['care_items'][0]['teknisi'];
+
+        $product_id = $data['item_perawatan']['produk']['produk_id'];
+        $attrs = ProdukAtribut::where(['produk_id' => $product_id])->get();
+        $dataAttrs = [];
+        foreach($attrs as $attr) {
+            $dattr = [
+                'item_id' => $attr->produk_atribut_id,
+                'label' => trim(preg_replace('/(\t|\r|\n)+/', ' ', $attr->nama_atribut))
+            ];
+
+            if($attr->kategori==ProdukAtribut::KATEGORI_PARAMETER) {
+                /* $dattr['answer'] = [
+                    'kebutuhan_alat' => [
+                        'satuan' => 'V',
+                        'value' => ''
+                    ],
+                    'terukur' => [
+                        'satuan' => 'V',
+                        'value' => ''
+                    ]
+                ]; */
+                //return response()->json($dattr['answer'],200);
+                $dattr['answer'] = json_decode($attr->answer,true);
+            } elseif($attr->kategori==ProdukAtribut::KATEGORI_BAGIAN_ALAT) {
+                /* $dattr['answer'] = [
+                    'pemeriksaan_fisik' => [
+                        'satuan' => 'Boolean',
+                        'value' => true
+                    ],
+                    'pemeriksaan_fungsi' => [
+                        'satuan' => 'Boolean',
+                        'value' => true
+                    ]
+                ]; */
+                //return response()->json($dattr['answer'],200);
+                $dattr['answer'] = json_decode($attr->answer,true);
+            } else {
+                $dattr['answer'] = [];
+            }
+
+            $dataAttrs[$attr->kategori][] = $dattr;
+        }
+        $data['item_perawatan']['lembar_kerja'] = $dataAttrs;
+
+        $result = [
+            'code' => '00000',
+            'noref' => session()->get('cilog.session_id'),
+            'type' => 'success',
+            'message' => 'Success',
+            'data' => $data
+        ];
+        cilog()->toDb(json_encode($result));
+        return response()->json($result, 200);
+    }
+
+    public function update(Request $request, $id)
+    {
+    }
+
+    public function destroy($id)
+    {
+        $model = Perawatan::where((new Perawatan)->getKeyName(), $id)->first();
+        if(empty($model)) {
+            $result = [
+                'code' => 'R0001',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Data not found'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 404);
+        }
+
+        if(!$model->delete()) {
+            $result = [
+                'code' => 'F0004',
+                'noref' => session()->get('cilog.session_id'),
+                'type' => 'error',
+                'message' => 'Failed to delete data'
+            ];
+            cilog()->toDb(json_encode($result));
+            return response()->json($result, 500);
+        }
+
+        $result = [
+            'code' => '00000',
+            'noref' => session()->get('cilog.session_id'),
+            'type' => 'success',
+            'message' => 'Data deleted successfully'
+        ];
+        cilog()->toDb(json_encode($result));
+        return response()->json($result, 200);
+    }
+}
+
+?>

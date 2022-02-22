@@ -1,0 +1,175 @@
+<?php
+
+use Illuminate\Http\Request;
+
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Log;
+
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\LocationController;
+use App\Http\Controllers\Api\RuanganController;
+use App\Http\Controllers\Api\SatuanController;
+use App\Http\Controllers\Api\PerawatanController;
+use App\Http\Controllers\Api\ProdukController;
+use App\Http\Controllers\Api\KelompokAsetController;
+use App\Http\Controllers\Api\PerawatanItemController;
+
+/*
+|--------------------------------------------------------------------------
+| API Routes
+|--------------------------------------------------------------------------
+|
+| Here is where you can register API routes for your application. These
+| routes are loaded by the RouteServiceProvider within a group which
+| is assigned the "api" middleware group. Enjoy building your API!
+|
+| Sanctum
+| https://laravel.com/docs/8.x/sanctum#how-it-works
+| https://www.youtube.com/watch?v=anUIR0mHJx8
+| https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&cad=rja&uact=8&ved=2ahUKEwio6_bmwd71AhU3TWwGHcR3BqAQFnoECA4QAw&url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DMT-GJQIY3EU&usg=AOvVaw20y6pSsz4meVCf4SJTFj_8
+|
+| What is The vendor:publish Command?
+| https://stillat.com/blog/2016/12/07/laravel-artisan-vendor-command-the-vendorpublish-command
+| https://www.codegrepper.com/code-examples/php/vendor+publish+laravel
+|
+|
+*/
+
+// =================================================================================
+// Sanctum Authentication
+// Protected Route
+// Kita bisa akses route ini dengan cara mengirimkan token bertipe "Bearer"
+// =================================================================================
+// http://127.0.0.1:8000/api/user
+Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
+    return $request->user();
+});
+
+Route::group(['middleware' => ['auth:sanctum']], function() {
+    // http://127.0.0.1:8000/api/logout
+    Route::post('/logout', [AuthController::class, 'logout']);
+    // http://127.0.0.1:8000/api/tokens
+    Route::get('/tokens', [AuthController::class, 'tokens']);
+
+    // http://127.0.0.1:8000/api/ruangan
+    // Route::post('/ruangan', [RuanganController::class, 'store'])->name('ruangan.store');
+    Route::get    ('/location',       [LocationController::class, 'index']);
+});
+// =================================================================================
+// Public Route
+// =================================================================================
+// http://127.0.0.1:8000/api/login
+Route::post('/login', [AuthController::class, 'login']);
+// =================================================================================
+//Route::get    ('/location',       [LocationController::class, 'index']);
+Route::post   ('/location',       [LocationController::class, 'store']);
+Route::get    ('/location/{id}',  [LocationController::class, 'show']);
+Route::put    ('/location/{id}',  [LocationController::class, 'update']);
+Route::delete ('/location/{id}',  [LocationController::class, 'destroy']);
+
+Route::get    ('/room',       [RuanganController::class, 'index']);
+Route::post   ('/room',       [RuanganController::class, 'store']);
+Route::get    ('/room/{id}',  [RuanganController::class, 'show']);
+Route::put    ('/room/{id}',  [RuanganController::class, 'update']);
+Route::delete ('/room/{id}',  [RuanganController::class, 'destroy']);
+
+Route::get    ('/satuan',       [SatuanController::class, 'index']);
+Route::post   ('/satuan',       [SatuanController::class, 'store']);
+Route::get    ('/satuan/{id}',  [SatuanController::class, 'show']);
+Route::put    ('/satuan/{id}',  [SatuanController::class, 'update']);
+Route::delete ('/satuan/{id}',  [SatuanController::class, 'destroy']);
+
+Route::get    ('/perawatan',       [PerawatanController::class, 'index']);
+Route::post   ('/perawatan',       [PerawatanController::class, 'store']);
+Route::get    ('/perawatan/{id}',  [PerawatanController::class, 'show']);
+Route::put    ('/perawatan/{id}',  [PerawatanController::class, 'update']);
+Route::delete ('/perawatan/{id}',  [PerawatanController::class, 'destroy']);
+
+Route::get    ('/produk',       [ProdukController::class, 'index']);
+Route::post   ('/produk',       [ProdukController::class, 'store']);
+Route::get    ('/produk/{id}',  [ProdukController::class, 'show']);
+Route::put    ('/produk/{id}',  [ProdukController::class, 'update']);
+Route::delete ('/produk/{id}',  [ProdukController::class, 'destroy']);
+
+Route::get    ('/kelompok-aset',       [KelompokAsetController::class, 'index']);
+Route::post   ('/kelompok-aset',       [KelompokAsetController::class, 'store']);
+Route::get    ('/kelompok-aset/{id}',  [KelompokAsetController::class, 'show']);
+Route::put    ('/kelompok-aset/{id}',  [KelompokAsetController::class, 'update']);
+Route::delete ('/kelompok-aset/{id}',  [KelompokAsetController::class, 'destroy']);
+
+Route::get    ('/perawatan-item',       [PerawatanItemController::class, 'index']);
+Route::post   ('/perawatan-item',       [PerawatanItemController::class, 'store']);
+Route::get    ('/perawatan-item/{id}',  [PerawatanItemController::class, 'show']);
+Route::put    ('/perawatan-item/{id}',  [PerawatanItemController::class, 'update']);
+Route::delete ('/perawatan-item/{id}',  [PerawatanItemController::class, 'destroy']);
+// =================================================================================
+
+// Route::any('/cilog', function() {});
+Route::match(['get','post'],'/cilog', function() {
+    //CILog::isConnected();exit;
+    //return response()->json(glob(app_path().'/Components/Log/*Fun.php'));
+    //echo cilog()->isConnected();exit;
+    $_ = ['logs','api','errors','api_'.date('Ymd').'.log'];
+    $str = '';
+    for($i=0;$i<sizeof($_);$i++) {
+        $str.=DIRECTORY_SEPARATOR.$_[$i];
+    }
+    // https://laravel.com/docs/8.x/helpers#paths-method-list
+    // echo storage_path().$str;exit;
+
+    // https://laravel.com/docs/8.x/logging
+    //$message = 'Internal server error';
+    //Log::emergency($message);
+    //Log::alert($message);
+    //Log::critical($message);
+    //Log::error($message);
+    //Log::warning($message);
+    //Log::notice($message);
+    //Log::info($message);
+    //Log::debug($message);
+    //
+    // C:\Apache24\htdocs\personal\belajar\laravel\storage\logs\laravel.log
+    //[2022-02-02 17:30:18] local.EMERGENCY: Internal server error
+    //[2022-02-02 17:30:41] local.ALERT: Internal server error
+    //[2022-02-02 17:33:28] local.CRITICAL: Internal server error
+    //[2022-02-02 17:33:38] local.ERROR: Internal server error
+    //[2022-02-02 17:33:49] local.WARNING: Internal server error
+    //[2022-02-02 17:33:58] local.NOTICE: Internal server error
+    //[2022-02-02 17:34:09] local.INFO: Internal server error
+    //[2022-02-02 17:34:16] local.DEBUG: Internal server error
+
+    //Log::build([
+    //    'driver' => 'single',
+    //    'path' => storage_path('logs/custom.log')
+    //])->info('Something happened!');
+
+    $server = request()->server();
+    $port = null;
+    if(isset($server['SERVER_PORT'])) {
+        $port = $server['SERVER_PORT'];
+    }
+    $attributes = [
+        'Full URL' => request()->fullUrl(),
+        'Method' => request()->method(),
+        'User Agent' => request()->userAgent(),
+        'IPv4' => request()->ip(),
+        'Domain Name' => request()->getHttpHost(),
+        'Headers' => request()->header(),
+        'Ips' => request()->ips(),
+        'Segments' => request()->segments(),
+        'Decode Path' =>request()->decodedPath(),
+        'Fingerprint' => request()->fingerprint(),
+        'Path' => request()->path(),
+        'Root' => request()->root(),
+        'Url' => request()->url(),
+        'Server' => $server,
+        'Bearer Token' => request()->bearerToken(),
+        'Input' => request()->input(),
+        'Post' => request()->post(),
+        'Query' => request()->query(),
+        'Cookie' => request()->cookie(),
+        'Port' => $port
+    ];
+    return response()->json($attributes,200);
+});
+
